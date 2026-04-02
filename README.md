@@ -1,6 +1,6 @@
 # TALM — Tree-Structured Multi-Agent Framework with Long-Term Memory
 
-A reproduction of the [TALM paper](https://arxiv.org/abs/2501.xxxxx): a multi-agent code generation framework that uses **tree-structured task decomposition**, **long-term vector memory**, and **localized re-reasoning** to produce validated Python code.
+A reproduction of the [TALM paper](https://arxiv.org/abs/2510.23010): a multi-agent code generation framework that uses **tree-structured task decomposition**, **long-term vector memory**, and **localized re-reasoning** to produce validated Python code.
 
 Exposed as an **MCP server** (via FastMCP) for integration with Claude, Cursor, or any MCP-compatible client.
 
