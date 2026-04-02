@@ -1,0 +1,33 @@
+# TALM System Hyperparameters
+# Reference: TALM paper Section 4 (Experiments)
+
+tree:
+  max_depth: 3          # m: maximum tree depth
+  initial_branching: 3  # n: initial branching factor
+  decay_rate: 1         # k: branching decay per level
+
+validation:
+  max_retries: 3        # r: max debug attempts in validation loop
+
+memory:
+  similarity_threshold: 0.75   # minimum similarity for retrieval
+  top_k: 3                     # max records to retrieve
+  merge_threshold: 0.95        # similarity threshold for consolidation
+
+llm:
+  provider: "gemini"                  # gemini | openai (extensible)
+  model: "gemini-2.0-flash"
+  temperature: 0                      # deterministic output
+  max_output_tokens: 8192
+
+embedding:
+  provider: "sentence_transformers"   # sentence_transformers | gemini (extensible)
+  model: "all-MiniLM-L6-v2"          # any sentence-transformers compatible model
+
+vector_db:
+  provider: "zvec"                    # zvec | chroma (extensible)
+  persist_dir: "./talm_vector_db"
+
+sandbox:
+  timeout_seconds: 30                 # max execution time per code run
+  enabled: true

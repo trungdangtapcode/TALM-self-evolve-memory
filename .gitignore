@@ -1,0 +1,27 @@
+ideas/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Virtual environment (5.4GB+ with PyTorch/CUDA)
+.venv/
+venv/
+env/
+
+# TALM runtime data (vector DB, indexes)
+talm_vector_db/
+talm_vector_db_index.json
+talm_chroma_db/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
