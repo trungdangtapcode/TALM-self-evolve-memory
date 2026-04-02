@@ -183,6 +183,13 @@ class ZvecAdapter(IVectorDatabase):
         """Return the number of records stored."""
         return len(self._index)
 
+    async def list_all(self) -> list[tuple[str, "MemoryRecord"]]:
+        """List all records from the side-index."""
+        return [
+            (rid, self._meta_to_record(meta))
+            for rid, meta in self._index.items()
+        ]
+
     @staticmethod
     def _meta_to_record(meta: dict) -> MemoryRecord:
         """Convert a side-index entry back into a MemoryRecord."""

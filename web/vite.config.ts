@@ -13,8 +13,7 @@ export default defineConfig({
   server: {
     port: 3000,
     proxy: {
-      // Proxy /api to TALM MCP server
-      "/mcp": {
+      "/api": {
         target: "http://localhost:8000",
         changeOrigin: true,
       },

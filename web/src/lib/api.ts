@@ -1,76 +1,41 @@
-/** TALM MCP Server API client.
+/** TALM REST API client.
  *
- * Calls the MCP server via JSON-RPC over HTTP (Streamable HTTP transport).
- * The Vite dev server proxies /mcp -> http://localhost:8000/mcp.
+ * Calls the TALM server's REST endpoints (not MCP protocol).
+ * Vite dev server proxies /api -> http://localhost:8000/api.
  */
 
-const MCP_URL = "/mcp";
+const BASE = "/api";
 
-let _reqId = 0;
-
-interface MCPResponse {
-  jsonrpc: string;
-  id: number;
-  result?: {
-    content: Array<{ type: string; text: string }>;
-  };
-  error?: { code: number; message: string };
+async function get<T>(path: string): Promise<T> {
+  const res = await fetch(`${BASE}${path}`);
+  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+  return res.json();
 }
 
-async function callTool(name: string, args: Record<string, unknown> = {}): Promise<string> {
-  const id = ++_reqId;
-  const res = await fetch(MCP_URL, {
+async function post<T>(path: string, body: Record<string, unknown>): Promise<T> {
+  const res = await fetch(`${BASE}${path}`, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Accept: "application/json, text/event-stream",
-    },
-    body: JSON.stringify({
-      jsonrpc: "2.0",
-      id,
-      method: "tools/call",
-      params: { name, arguments: args },
-    }),
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
   });
-
   if (!res.ok) {
-    throw new Error(`MCP server error: ${res.status} ${res.statusText}`);
+    const err = await res.json().catch(() => ({ error: res.statusText }));
+    throw new Error(err.error || res.statusText);
   }
-
-  const contentType = res.headers.get("content-type") || "";
-
-  // Handle SSE (Streamable HTTP) — collect until we get a result
-  if (contentType.includes("text/event-stream")) {
-    const text = await res.text();
-    const lines = text.split("\n");
-    for (const line of lines) {
-      if (line.startsWith("data: ")) {
-        try {
-          const data: MCPResponse = JSON.parse(line.slice(6));
-          if (data.result?.content) {
-            return data.result.content.map((c) => c.text).join("\n");
-          }
-          if (data.error) {
-            throw new Error(data.error.message);
-          }
-        } catch {
-          // skip non-JSON lines
-        }
-      }
-    }
-    throw new Error("No result in SSE stream");
-  }
-
-  // Handle plain JSON-RPC response
-  const data: MCPResponse = await res.json();
-  if (data.error) throw new Error(data.error.message);
-  if (data.result?.content) {
-    return data.result.content.map((c) => c.text).join("\n");
-  }
-  throw new Error("Unexpected response format");
+  return res.json();
 }
 
-// --- Public API ---
+async function put<T>(path: string, body: Record<string, unknown>): Promise<T> {
+  const res = await fetch(`${BASE}${path}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+  return res.json();
+}
+
+// --- Types ---
 
 export interface GenerateResult {
   status: string;
@@ -95,30 +60,37 @@ export interface TALMConfig {
   sandbox: { timeout: number; enabled: boolean };
 }
 
+// --- Public API ---
+
 export async function generateCode(taskDescription: string): Promise<GenerateResult> {
-  const raw = await callTool("generate_code", { task_description: taskDescription });
-  return JSON.parse(raw);
+  return post("/generate", { task_description: taskDescription, mode: "full" });
 }
 
 export async function generateCodeSimple(taskDescription: string): Promise<GenerateResult> {
-  const raw = await callTool("generate_code_simple", { task_description: taskDescription });
-  return JSON.parse(raw);
+  return post("/generate", { task_description: taskDescription, mode: "simple" });
 }
 
 export async function getConfig(): Promise<TALMConfig> {
-  const raw = await callTool("get_config");
-  return JSON.parse(raw);
+  return get("/config");
 }
 
 export async function getMemoryStats(): Promise<MemoryStats> {
-  const raw = await callTool("get_memory_stats");
-  return JSON.parse(raw);
+  return get("/memory/stats");
 }
 
 export async function clearMemory(): Promise<void> {
-  await callTool("clear_memory");
+  await post("/memory/clear", {});
 }
 
 export async function updateConfig(params: Record<string, unknown>): Promise<void> {
-  await callTool("update_config", params);
+  await put("/config", params);
+}
+
+export async function healthCheck(): Promise<boolean> {
+  try {
+    await get("/health");
+    return true;
+  } catch {
+    return false;
+  }
 }

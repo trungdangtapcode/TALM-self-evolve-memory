@@ -1,15 +1,15 @@
 """Google Gemini adapter implementing ILLMClient.
 
-Uses the google-generativeai SDK.  Reads credentials from environment
-variables: GOOGLE_API_KEY (or GOOGLE_CLOUD_PROJECT + GOOGLE_CLOUD_LOCATION
-for Vertex AI).
+Uses the new google-genai SDK (replaces deprecated google-generativeai).
+Reads GOOGLE_API_KEY from environment automatically.
 """
 
 from __future__ import annotations
 
 import logging
 
-import google.generativeai as genai
+from google import genai
+from google.genai import types
 
 from talm.core.interfaces import ILLMClient
 
@@ -19,8 +19,9 @@ logger = logging.getLogger(__name__)
 class GeminiLLMClient(ILLMClient):
     """Concrete LLM client backed by Google Gemini."""
 
-    def __init__(self, model_name: str = "gemini-2.0-flash") -> None:
+    def __init__(self, model_name: str = "gemini-2.5-flash") -> None:
         self._model_name = model_name
+        self._client = genai.Client()
 
     async def generate(
         self,
@@ -30,14 +31,14 @@ class GeminiLLMClient(ILLMClient):
         max_tokens: int = 8192,
     ) -> str:
         """Call Gemini to generate a completion."""
-        config = genai.GenerationConfig(
+        config = types.GenerateContentConfig(
+            system_instruction=system_prompt,
             temperature=temperature,
             max_output_tokens=max_tokens,
         )
-        model = genai.GenerativeModel(
-            self._model_name,
-            system_instruction=system_prompt,
-            generation_config=config,
+        response = await self._client.aio.models.generate_content(
+            model=self._model_name,
+            contents=user_prompt,
+            config=config,
         )
-        response = await model.generate_content_async(user_prompt)
         return response.text

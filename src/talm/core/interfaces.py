@@ -85,6 +85,10 @@ class IVectorDatabase(ABC):
     async def count(self) -> int:
         """Return the number of records stored."""
 
+    @abstractmethod
+    async def list_all(self) -> list[tuple[str, MemoryRecord]]:
+        """List all records with their IDs. For debugging/UI inspection."""
+
 
 class ISandbox(ABC):
     """Interface for isolated code execution environments."""

@@ -90,3 +90,17 @@ class TALMWorkflow:
     async def get_memory_count(self) -> int:
         """Return the number of records in long-term memory."""
         return await self.memory.count()
+
+    async def list_memory(self) -> list[dict]:
+        """List all memory records for UI inspection."""
+        records = await self.memory.list_all()
+        return [
+            {
+                "id": rid,
+                "task_description": rec.task_description,
+                "reasoning_trace": rec.reasoning_trace,
+                "generated_code": rec.generated_code,
+                "tree_depth": rec.tree_depth,
+            }
+            for rid, rec in records
+        ]

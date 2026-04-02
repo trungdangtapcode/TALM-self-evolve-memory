@@ -53,8 +53,8 @@ Rules:
   with exactly: NO_DELEGATION
 - Otherwise, decompose into subtasks. For each subtask output a JSON array:
   [
-    {"subtask_id": 1, "description": "detailed description of subtask 1"},
-    {"subtask_id": 2, "description": "detailed description of subtask 2"},
+    {{"subtask_id": 1, "description": "detailed description of subtask 1"}},
+    {{"subtask_id": 2, "description": "detailed description of subtask 2"}},
     ...
   ]
 - Maximum number of subtasks: {max_children}

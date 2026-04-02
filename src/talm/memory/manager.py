@@ -107,3 +107,7 @@ class MemoryManager:
     async def count(self) -> int:
         """Return the number of memory records stored."""
         return await self._db.count()
+
+    async def list_all(self) -> list[tuple[str, MemoryRecord]]:
+        """List all memory records with their IDs."""
+        return await self._db.list_all()

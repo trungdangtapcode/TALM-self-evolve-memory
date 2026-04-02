@@ -128,6 +128,20 @@ class ChromaDBAdapter(IVectorDatabase):
         """Return the number of records stored."""
         return self._collection.count()
 
+    async def list_all(self) -> list[tuple[str, MemoryRecord]]:
+        """List all records from the collection."""
+        total = self._collection.count()
+        if total == 0:
+            return []
+        results = self._collection.get(
+            include=["documents", "metadatas"],
+            limit=total,
+        )
+        records = []
+        for rid, doc, meta in zip(results["ids"], results["documents"], results["metadatas"]):
+            records.append((rid, self._doc_to_record(doc, meta)))
+        return records
+
     @staticmethod
     def _doc_to_record(doc: str, meta: dict) -> MemoryRecord:
         """Deserialize a ChromaDB document back into a MemoryRecord."""
