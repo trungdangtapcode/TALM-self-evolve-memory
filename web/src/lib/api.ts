@@ -78,6 +78,19 @@ export async function getMemoryStats(): Promise<MemoryStats> {
   return get("/memory/stats");
 }
 
+export interface MemoryRecord {
+  id: string;
+  task_description: string;
+  reasoning_trace: string;
+  generated_code: string;
+  tree_depth: number;
+}
+
+export async function getMemoryRecords(): Promise<MemoryRecord[]> {
+  const data = await get<{ records: MemoryRecord[] }>("/memory/records");
+  return data.records;
+}
+
 export async function clearMemory(): Promise<void> {
   await post("/memory/clear", {});
 }
