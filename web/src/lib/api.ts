@@ -91,6 +91,10 @@ export async function getMemoryRecords(): Promise<MemoryRecord[]> {
   return data.records;
 }
 
+export async function insertMemory(record: Omit<MemoryRecord, "id">): Promise<void> {
+  await post("/memory/records", record as Record<string, unknown>);
+}
+
 export async function clearMemory(): Promise<void> {
   await post("/memory/clear", {});
 }

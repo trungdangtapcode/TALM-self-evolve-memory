@@ -7,9 +7,10 @@ import {
   FileText, Code, Brain, Layers,
 } from "lucide-react";
 import {
-  getMemoryStats, getMemoryRecords, clearMemory,
+  getMemoryStats, getMemoryRecords, clearMemory, insertMemory,
   type MemoryStats, type MemoryRecord,
 } from "@/lib/api";
+import { Plus } from "lucide-react";
 
 interface Props {
   refreshTrigger: number;
@@ -21,6 +22,7 @@ export default function MemoryExplorer({ refreshTrigger }: Props) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [showInsertForm, setShowInsertForm] = useState(false);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -53,6 +55,16 @@ export default function MemoryExplorer({ refreshTrigger }: Props) {
 
   const toggle = (id: string) => setExpandedId(expandedId === id ? null : id);
 
+  const handleInsert = async (record: Omit<MemoryRecord, "id">) => {
+    try {
+      await insertMemory(record);
+      setShowInsertForm(false);
+      await fetchData();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Insert failed");
+    }
+  };
+
   return (
     <Card>
       <CardHeader>
@@ -65,6 +77,9 @@ export default function MemoryExplorer({ refreshTrigger }: Props) {
             <CardDescription>Browse all records stored in vector DB</CardDescription>
           </div>
           <div className="flex gap-1.5">
+            <Button variant="ghost" size="icon" onClick={() => setShowInsertForm(!showInsertForm)} title="Add memory record">
+              <Plus className="h-4 w-4" />
+            </Button>
             <Button variant="ghost" size="icon" onClick={fetchData} disabled={loading}>
               <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
             </Button>
@@ -85,6 +100,9 @@ export default function MemoryExplorer({ refreshTrigger }: Props) {
           </div>
         ) : (
           <div className="space-y-3">
+            {/* Insert form */}
+            {showInsertForm && <InsertForm onSubmit={handleInsert} onCancel={() => setShowInsertForm(false)} />}
+
             {/* Stats bar */}
             {stats && (
               <div className="flex items-center gap-3 p-2.5 rounded-[var(--radius)] bg-[var(--secondary)]">
@@ -201,6 +219,54 @@ function Section({
         {icon} {label}
       </div>
       {children}
+    </div>
+  );
+}
+
+function InsertForm({
+  onSubmit,
+  onCancel,
+}: {
+  onSubmit: (record: Omit<MemoryRecord, "id">) => void;
+  onCancel: () => void;
+}) {
+  const [task, setTask] = useState("");
+  const [reasoning, setReasoning] = useState("");
+  const [code, setCode] = useState("");
+  const [depth, setDepth] = useState(0);
+
+  const inputClass =
+    "w-full rounded border border-[var(--border)] bg-[var(--background)] p-2 text-xs text-[var(--foreground)] placeholder:text-[var(--muted-foreground)] focus:outline-none focus:ring-1 focus:ring-[var(--ring)] resize-y";
+
+  return (
+    <div className="p-3 rounded-[var(--radius)] border border-[var(--primary)]/30 bg-[var(--primary)]/5 space-y-2">
+      <div className="text-xs font-semibold flex items-center gap-1.5">
+        <Plus className="h-3.5 w-3.5" /> Add Memory Record
+      </div>
+      <textarea className={inputClass} rows={2} placeholder="Task description" value={task} onChange={(e) => setTask(e.target.value)} />
+      <textarea className={inputClass} rows={2} placeholder="Reasoning trace / plan" value={reasoning} onChange={(e) => setReasoning(e.target.value)} />
+      <textarea className={inputClass} rows={4} placeholder="Generated code" value={code} onChange={(e) => setCode(e.target.value)} />
+      <div className="flex items-center gap-2">
+        <label className="text-xs text-[var(--muted-foreground)]">tree_depth:</label>
+        <input
+          type="number" min={0} max={10} value={depth}
+          onChange={(e) => setDepth(Number(e.target.value))}
+          className="w-16 rounded border border-[var(--border)] bg-[var(--background)] px-2 py-1 text-xs text-[var(--foreground)]"
+        />
+      </div>
+      <div className="flex gap-2">
+        <Button
+          size="sm"
+          disabled={!task.trim() || !code.trim()}
+          onClick={() => onSubmit({ task_description: task, reasoning_trace: reasoning, generated_code: code, tree_depth: depth })}
+        >
+          Insert
+        </Button>
+        <Button size="sm" variant="ghost" onClick={onCancel}>Cancel</Button>
+      </div>
+      <p className="text-[10px] text-[var(--muted-foreground)]">
+        Note: consolidation rules apply — if a near-duplicate exists (sim &ge; 0.95), records will be merged automatically.
+      </p>
     </div>
   );
 }
