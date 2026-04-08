@@ -213,6 +213,50 @@ def reflection_prompt(
 
 
 # ---------------------------------------------------------------------------
+# Structure-Correction: Parent reviews child outputs before integration
+# ---------------------------------------------------------------------------
+
+INTEGRATION_REVIEW_SYSTEM = """\
+You are a senior software architect reviewing the outputs of child agents.
+A parent agent decomposed a task into subtasks and received code from children.
+
+Determine if the decomposition was sound by checking:
+1. Do the child outputs cover all aspects of the original task?
+2. Are there missing dependencies or overlapping responsibilities?
+3. Can the child outputs be coherently integrated into a working solution?
+
+Respond with a JSON object:
+- If the decomposition is sound:
+  {{"verdict": "accept"}}
+- If the decomposition is flawed (irrelevant subtasks, missing pieces,
+  conflicting interfaces, overlooked critical dependencies):
+  {{"verdict": "restructure", "reason": "brief explanation of what went wrong"}}
+"""
+
+
+def integration_review_prompt(
+    task_description: str,
+    plan: str,
+    child_outputs: list[tuple[str, str]],
+) -> tuple[str, str]:
+    """Build the integration-review prompt pair.
+
+    Args:
+        task_description: The parent's original task.
+        plan: The parent's plan that led to decomposition.
+        child_outputs: List of (subtask_description, code) from children.
+    """
+    user = (
+        f"## Original Task\n{task_description}\n\n"
+        f"## Parent's Plan\n{plan}\n\n"
+        f"## Child Outputs\n"
+    )
+    for i, (desc, code) in enumerate(child_outputs, 1):
+        user += f"\n### Child {i}: {desc}\n```python\n{code}\n```\n"
+    return INTEGRATION_REVIEW_SYSTEM, user
+
+
+# ---------------------------------------------------------------------------
 # Memory Consolidation
 # ---------------------------------------------------------------------------
 

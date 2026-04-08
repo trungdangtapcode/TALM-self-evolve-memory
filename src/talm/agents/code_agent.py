@@ -29,6 +29,7 @@ from talm.prompts.templates import (
     delegation_prompt,
     format_memory_context,
     implementation_prompt,
+    integration_review_prompt,
     planning_prompt,
     reflection_prompt,
 )
@@ -153,7 +154,15 @@ class CodeAgent:
     # ------------------------------------------------------------------
 
     async def _phase_delegation(self) -> list[str]:
-        """Decide whether to delegate subtasks to child agents."""
+        """Decide whether to delegate subtasks to child agents.
+
+        Paper flow:
+        1. Check depth/branching constraints
+        2. Ask LLM to decompose (or skip with NO_DELEGATION)
+        3. Spawn children, handle clarifications (bottom-up re-reasoning)
+        4. Collect outputs, let parent REVIEW integration feasibility
+        5. If decomposition is flawed → structure-correction (top-down re-reasoning)
+        """
         depth = self._task.tree_depth
 
         # Leaf nodes cannot delegate
@@ -168,51 +177,102 @@ class CodeAgent:
             return []
 
         # Ask LLM whether decomposition is needed
+        subtasks = await self._decompose(max_children)
+        if not subtasks:
+            return []
+
+        # Spawn children and collect results
+        child_codes, child_descs = await self._execute_children(subtasks, depth)
+
+        # If all children failed outright, trigger structure correction
+        if subtasks and not child_codes:
+            logger.warning("All children failed — triggering structure correction")
+            return await self._structure_correction(max_children, reason="All child agents failed to produce valid code.")
+
+        # Parent reviews child outputs to detect flawed decomposition
+        # Paper: "after a parent agent has collected and reviewed the outputs
+        # of its children. If the parent determines that its initial task
+        # decomposition was flawed... it revises its plan and replaces the
+        # entire subtree."
+        if child_codes and child_descs:
+            needs_restructure, reason = await self._review_integration(child_codes, child_descs)
+            if needs_restructure:
+                logger.warning("Integration review failed — triggering structure correction: %s", reason)
+                return await self._structure_correction(max_children, reason=reason)
+
+        return child_codes
+
+    async def _decompose(self, max_children: int) -> list[dict]:
+        """Ask LLM to decompose the task into subtasks."""
         sys_prompt, usr_prompt = delegation_prompt(
             self._plan, self._task.description, max_children
         )
         raw = await self._llm.generate(
-            sys_prompt,
-            usr_prompt,
-            temperature=self._config.temperature,
+            sys_prompt, usr_prompt, temperature=self._config.temperature,
         )
-
         if "NO_DELEGATION" in raw:
-            logger.info("No delegation needed at depth=%d", depth)
+            logger.info("No delegation needed at depth=%d", self._task.tree_depth)
             return []
-
-        # Parse subtask list
         subtasks = _parse_json_array(raw)
         if not subtasks:
             logger.warning("Could not parse delegation output, skipping delegation")
             return []
-
-        # Limit to max_children
         subtasks = subtasks[:max_children]
-        logger.info("Delegating %d subtasks at depth=%d", len(subtasks), depth)
+        logger.info("Delegating %d subtasks at depth=%d", len(subtasks), self._task.tree_depth)
+        return subtasks
 
-        # Spawn child agents and collect results
+    async def _execute_children(
+        self, subtasks: list[dict], depth: int
+    ) -> tuple[list[str], list[tuple[str, str]]]:
+        """Spawn children, handle clarifications, return (codes, (desc,code) pairs)."""
         child_codes: list[str] = []
+        child_descs: list[tuple[str, str]] = []
+
         for st in subtasks:
             desc = st.get("description", str(st))
             child_result = await self._execute_child(desc, depth + 1)
 
+            # Bottom-up re-reasoning: child requests clarification
             if child_result.status == AgentResponseStatus.CLARIFY:
-                # Localized Re-Reasoning: child requests clarification
                 desc = await self._handle_clarification(desc, child_result)
                 child_result = await self._execute_child(desc, depth + 1)
 
             if child_result.status == AgentResponseStatus.SUCCESS:
                 child_codes.append(child_result.code)
+                child_descs.append((desc, child_result.code))
             else:
                 logger.warning("Child agent failed for subtask: %.60s...", desc)
 
-        # Structure-Correction: if all children failed, restructure
-        if subtasks and not child_codes:
-            logger.warning("All children failed — triggering structure correction")
-            return await self._structure_correction()
+        return child_codes, child_descs
 
-        return child_codes
+    async def _review_integration(
+        self, child_codes: list[str], child_descs: list[tuple[str, str]]
+    ) -> tuple[bool, str]:
+        """Parent reviews child outputs to check if decomposition was sound.
+
+        Paper: "If the parent determines that its initial task decomposition
+        was flawed—such as assigning irrelevant subtasks or overlooking
+        critical dependencies—it revises its plan."
+
+        Returns:
+            (needs_restructure, reason)
+        """
+        sys_prompt, usr_prompt = integration_review_prompt(
+            self._task.description, self._plan, child_descs
+        )
+        raw = await self._llm.generate(sys_prompt, usr_prompt)
+
+        try:
+            # Extract JSON from response
+            match = re.search(r"\{.*\}", raw, re.DOTALL)
+            if match:
+                data = json.loads(match.group(0))
+                if data.get("verdict") == "restructure":
+                    return True, data.get("reason", "Flawed decomposition detected")
+        except (json.JSONDecodeError, AttributeError):
+            pass
+
+        return False, ""
 
     async def _execute_child(self, description: str, depth: int) -> AgentResult:
         """Create and execute a child CodeAgent."""
@@ -260,28 +320,30 @@ class CodeAgent:
         logger.info("Clarified subtask after child request")
         return clarified.strip()
 
-    async def _structure_correction(self) -> list[str]:
-        """Re-plan and re-delegate when all children fail (top-down correction)."""
-        logger.info("Structure correction: re-planning delegation")
+    async def _structure_correction(self, max_children: int, reason: str) -> list[str]:
+        """Discard child outputs and re-decompose with corrected structure.
+
+        Paper: "it revises its plan and replaces the entire subtree rooted
+        at self with a new set of children and subtasks. The previous results
+        are discarded, and the regenerated subtree reflects a more
+        task-aligned decomposition."
+        """
+        logger.info("Structure correction: re-planning delegation (reason: %s)", reason)
         sys_prompt, usr_prompt = delegation_prompt(
             self._plan,
-            self._task.description + "\n\n[NOTE: Previous decomposition failed. "
-            "Please restructure the subtasks differently.]",
-            self._config.initial_branching
-            - self._config.decay_rate * self._task.tree_depth,
+            self._task.description
+            + f"\n\n[STRUCTURE CORRECTION: The previous decomposition was flawed. "
+            f"Reason: {reason}. "
+            f"Please restructure the subtasks with a different approach.]",
+            max_children,
         )
         raw = await self._llm.generate(sys_prompt, usr_prompt)
         subtasks = _parse_json_array(raw)
         if not subtasks:
             return []
 
-        child_codes: list[str] = []
-        for st in subtasks:
-            desc = st.get("description", str(st))
-            result = await self._execute_child(desc, self._task.tree_depth + 1)
-            if result.status == AgentResponseStatus.SUCCESS:
-                child_codes.append(result.code)
-
+        subtasks = subtasks[:max_children]
+        child_codes, _ = await self._execute_children(subtasks, self._task.tree_depth)
         return child_codes
 
     # ------------------------------------------------------------------
