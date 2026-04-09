@@ -170,9 +170,18 @@ class ZvecAdapter(IVectorDatabase):
         return matches
 
     async def clear(self) -> None:
-        """Clear all records by recreating the database and index."""
+        """Clear all records by recreating the database and index.
+
+        Zvec's Collection has no close() method, so we flush pending writes,
+        drop our reference (releasing the underlying handle on GC), then
+        rmtree the persist dir and re-init.
+        """
         if self._collection is not None:
-            self._collection.close()
+            try:
+                self._collection.flush()
+            except Exception as e:
+                logger.warning("Zvec flush failed during clear: %s", e)
+            self._collection = None
         shutil.rmtree(self._persist_dir, ignore_errors=True)
         self._index.clear()
         self._save_index()

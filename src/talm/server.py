@@ -251,6 +251,29 @@ def _build_rest_app():
         records = await wf.list_memory()
         return JSONResponse({"records": records})
 
+    async def api_memory_insert(request: Request) -> JSONResponse:
+        """Manually insert a memory record.
+
+        This goes through the same update() pipeline as auto-stored records,
+        meaning consolidation will trigger if a near-duplicate exists (sim >= 0.95).
+        """
+        body = await request.json()
+        for field in ("task_description", "reasoning_trace", "generated_code", "tree_depth"):
+            if field not in body:
+                return JSONResponse({"error": f"Missing field: {field}"}, status_code=400)
+
+        wf = _get_workflow()
+        from talm.core.entities import MemoryRecord
+        record = MemoryRecord(
+            task_description=body["task_description"],
+            reasoning_trace=body["reasoning_trace"],
+            generated_code=body["generated_code"],
+            tree_depth=body["tree_depth"],
+        )
+        # Uses the same update() path — consolidation applies automatically
+        await wf.memory.update(record)
+        return JSONResponse({"status": "inserted", "message": "Record stored (consolidation rules applied)"})
+
     async def api_health(request: Request) -> JSONResponse:
         return JSONResponse({"status": "ok", "service": "talm"})
 
@@ -262,6 +285,7 @@ def _build_rest_app():
             Route("/api/config", api_config_update, methods=["PUT"]),
             Route("/api/memory/stats", api_memory_stats, methods=["GET"]),
             Route("/api/memory/records", api_memory_records, methods=["GET"]),
+            Route("/api/memory/records", api_memory_insert, methods=["POST"]),
             Route("/api/memory/clear", api_memory_clear, methods=["POST"]),
         ],
     )

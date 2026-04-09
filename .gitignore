@@ -25,3 +25,4 @@ talm_chroma_db/
 # OS
 .DS_Store
 Thumbs.db
+data/

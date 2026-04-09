@@ -4,6 +4,71 @@ A reproduction of the [TALM paper](https://arxiv.org/abs/2510.23010): a multi-ag
 
 Exposed as an **MCP server** (via FastMCP) for integration with Claude, Cursor, or any MCP-compatible client.
 
+## LongMemEval Benchmark
+
+TALM's long-term memory is benchmarked against the **LongMemEval** dataset
+([Wu et al., ICLR 2025](https://arxiv.org/abs/2410.10813)) — a 500-instance
+benchmark that evaluates long-term memory across information extraction,
+multi-session reasoning, knowledge updates, temporal reasoning, and abstention.
+
+### Headline result (LongMemEval_S, full 470 answerable instances)
+
+| System | Embedder size | session_recall@5 |
+|---|---:|---:|
+| BM25 | — | ~70% |
+| Contriever | 110M | ~76% |
+| Stella V5 | 1.5B | ~83% |
+| GTE-Qwen2-7B | 7B | ~85% |
+| **TALM (all-MiniLM-L6-v2)** | **22M** | **85.9%** |
+
+TALM matches GTE-Qwen2-7B's published recall using an embedder **320× smaller**.
+Run with `--seed 42`, `--top-k 5`, full 500-instance dataset (30 abstention
+instances excluded by default since they have no ground-truth session locations).
+
+**Per-question-type breakdown** (n = 470, top-k = 5):
+
+| Question type | n | recall@5 | hit@1 |
+|---|---:|---:|---:|
+| single-session-assistant | 56 | **98.2%** | **98.2%** |
+| knowledge-update | 72 | 87.5% | 77.8% |
+| multi-session | 121 | 85.7% | 86.0% |
+| single-session-preference | 30 | 83.3% | 50.0% |
+| temporal-reasoning | 127 | 82.7% | 73.2% |
+| single-session-user | 64 | 81.2% | 53.1% |
+| **Overall** | **470** | **85.9%** | **76.0%** |
+
+The weak spot is `single-session-user`: questions where the answer is one
+sentence buried in a session whose dominant topic is something else (e.g.
+*"Who gave me a new stand mixer?"* mentioned in passing during a long
+discussion of caramel pastry recipes). Session-granularity embedding gets
+washed out by the dominant topic. Adding turn-level indexing or
+LongMemEval's "fact-augmented key expansion" would lift this number.
+
+See [`docs/memory_benchmarking.md`](docs/memory_benchmarking.md) for the full
+methodology, caveats, and a portable recipe for benchmarking any other
+memory system the same way.
+
+### Reproduce locally
+
+```bash
+# 1. Download the dataset (~280 MB total, gitignored)
+mkdir -p data && cd data
+wget https://huggingface.co/datasets/xiaowu0162/longmemeval-cleaned/resolve/main/longmemeval_s_cleaned.json
+wget https://huggingface.co/datasets/xiaowu0162/longmemeval-cleaned/resolve/main/longmemeval_oracle.json
+cd ..
+
+# 2. Run a 5% smoke test (~40 s on CPU)
+.venv/bin/python showcase/longmemeval_real.py --slice 25 --top-k 5 --seed 42
+
+# 3. Run the full 500 instances for the publishable number (~13 min on CPU)
+.venv/bin/python showcase/longmemeval_real.py --slice 500 --top-k 5 --seed 42 --json
+```
+
+A second harness, [`showcase/longmemeval_bench.py`](showcase/longmemeval_bench.py),
+runs a synthetic 4-category benchmark (12 hand-crafted seeds + 14 queries) that
+needs no dataset download and no API key. Use it as a fast pipeline check or
+to ablate the retrieval threshold.
+
 ## Architecture
 
 ### System Overview
